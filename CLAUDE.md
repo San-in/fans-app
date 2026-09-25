@@ -101,12 +101,16 @@ returns, the write is committed. The 50,000-message history is **generated** fro
    message by id in one state update. Repeats are no-ops.
 4. The outbox drains **serially in local order**; a message waiting out a backoff blocks
    the ones behind it. Failed messages step out of the line.
-5. Order comes from the server `seq` only. Pending messages always render after confirmed
-   ones. Own messages are keyed `c:<clientId>` pending *and* confirmed, so confirmation
-   updates the cell in place.
+5. Order comes from the server `seq` only. Queued messages render after confirmed ones, in
+   local order. A failed message stays where it failed (`anchorSeq`: after the newest
+   confirmed message at that moment) until it is retried, edited or deleted; a retry moves
+   it back to the end. Own messages are keyed `c:<clientId>` pending *and* confirmed, so
+   confirmation updates the cell in place.
 6. After every (re)connect the engine catches up by cursor (`getMessagesAfter`) before
    draining the outbox — the socket never delivers what was published while offline.
    A message landing past a hole in `seq` triggers a catch-up too.
+7. Messages rejected by the free limit are re-queued automatically once All Access is
+   confirmed (`requeueQuotaFailures`) — same clientId, so still at most one copy.
 
 ### Billing guarantees
 
@@ -132,16 +136,22 @@ returns, the write is committed. The 50,000-message history is **generated** fro
 - **Navigation** is React Navigation native-stack (`src/navigation/RootStack`), not Expo
   Router — three screens: Chat, Paywall (modal), DevPanel (modal).
 - **Text** only through `AppText` (typography + Dynamic Type ceiling). Tappable icons use
-  `IconButton` (a11y label required); everything pressable is `Pressable`, ≥ 44pt.
+  `IconButton` (a11y label required); everything pressable is `Pressable`, ≥ 44pt — the
+  design's 36pt composer controls reach it with `hitSlop`.
+- **Icons**: Ionicons, except the Figma exports in `src/components/icons` (react-native-svg).
 - **Styles** live in `.styles.ts` (`react-native/no-inline-styles` is an error). Dynamic
   styles go through a memoized `useXxxStyles` hook.
 - **Safe area**: size things with `initialWindowMetrics?.insets.* ?? liveInset` — the live
   inset can transiently read 0 on Android (portrait-locked app).
 - **Motion**: Reanimated layout animations always `.reduceMotion(ReduceMotion.System)`;
   imperative scrolls use `useReducedMotion()`. Only live messages animate in.
-- **Haptics** via `@services/feedback/haptics`, fire-and-forget. Feedback for state the
-  user didn't trigger (failures, confirmations) is driven by store transitions
-  (`useDeliveryFeedback`), never by row mounts — list cells are recycled.
+- **Haptics** via `@services/feedback/haptics`, fire-and-forget: `selection` for switches
+  and segments, `tap` for actions. Feedback for state the user didn't trigger (failures,
+  confirmations, access changes) is driven by store transitions (`useDeliveryFeedback`,
+  `useAccessFeedback`), never by row mounts — list cells are recycled.
+- **Toasts** via `showToast` (`@services/feedback/toast`) for actions whose effect isn't on
+  screen yet (every simulation control, access changes). `ToastHost` sits at the app root
+  and uses `FullWindowOverlay` on iOS so it shows over modals.
 - **Code style**: no abbreviations in names; `Boolean(x)` not `!!x`; `String()` /
   `Number()` for conversions; destructure; `Array<T>` generic syntax; comments explain
   the non-obvious *why* in one or two lines.
@@ -159,9 +169,13 @@ returns, the write is committed. The 50,000-message history is **generated** fro
 
 The project is on **SDK 54** on purpose: SDK 55 needs Xcode 26.2+ and SDK 56/57 need
 Xcode 26.4+, while this machine (and many reviewers') builds with Xcode 26.0. SDK 54
-builds with Xcode 16.1+ and runs in the Expo Go 54 that is already on the simulator.
-Keyboard handling therefore uses keyboard-controller 1.18's `KeyboardAvoidingView`
-(`translate-with-padding`); `KeyboardChatScrollView` only exists from 1.20.
+builds with Xcode 16.1+ and runs in Expo Go 54 (simulator and phones) — keep every native
+module inside Expo Go's set. Keyboard handling therefore uses keyboard-controller 1.18
+(the version Expo Go ships): list, gift strip and composer move as one
+`KeyboardStickyView`, with the header above them (`zIndex`). `KeyboardAvoidingView`
+`translate-with-padding` was dropped: it adds its padding after the animation, so the
+list re-scrolled once the keyboard settled. `KeyboardChatScrollView` would be better but
+needs 1.20+, i.e. no Expo Go.
 
 ## Known limitations
 

@@ -25,6 +25,11 @@ export type OutboxRecord = {
   attempts: number
   status: 'queued' | 'failed'
   failure: SendFailure | null
+  /**
+   * Failed messages keep their place: they render right after the confirmed
+   * message with this seq (the newest one when the send failed). Null while queued.
+   */
+  anchorSeq: number | null
 }
 
 /** Runtime-only fields are never persisted: after a restart nothing is "in flight". */

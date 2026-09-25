@@ -121,7 +121,15 @@ export class ChatEngine {
       this.deps.connectivity.subscribe(this.handleConnectivityChange),
       this.deps.realtime.onStatusChange(this.handleRealtimeStatus),
       this.deps.realtime.onEvent(this.handleRealtimeEvent),
+      this.deps.access.store.subscribe(({ status }, previous) => {
+        if (status === 'active' && previous.status !== 'active') {
+          this.requeueQuotaFailures()
+        }
+      }),
     ]
+    if (this.deps.access.isAllAccessActive()) {
+      this.requeueQuotaFailures()
+    }
     this.refreshConnectionStatus()
     if (this.deps.connectivity.isOnline()) {
       void this.syncThenFlush()
@@ -176,6 +184,7 @@ export class ChatEngine {
         attempts: 0,
         status: 'queued',
         failure: null,
+        anchorSeq: null,
         isSending: false,
         nextRetryAt: null,
       }
@@ -194,9 +203,10 @@ export class ChatEngine {
     if (!item || item.status !== 'failed' || item.failure?.action === 'edit') {
       return
     }
+    // Retrying moves it back to the end of the thread, where its new seq will land.
     this.updateOutboxItem(
       clientId,
-      { status: 'queued', failure: null, attempts: 0, nextRetryAt: null },
+      { status: 'queued', failure: null, attempts: 0, nextRetryAt: null, anchorSeq: null },
       { shouldPersist: true }
     )
     void this.flushOutbox()
@@ -604,11 +614,31 @@ export class ChatEngine {
   }
 
   private markFailed(clientId: string, attempts: number, failure: SendFailure): void {
+    // Pin it after the newest confirmed message — where it is on screen right now —
+    // so later messages appear below it instead of above.
+    const { messages } = this.store.getState()
+    const anchorSeq = messages[messages.length - 1]?.seq ?? null
     this.updateOutboxItem(
       clientId,
-      { status: 'failed', failure, attempts, isSending: false, nextRetryAt: null },
+      { status: 'failed', failure, attempts, isSending: false, nextRetryAt: null, anchorSeq },
       { shouldPersist: true }
     )
+  }
+
+  /** The free limit no longer applies once All Access is confirmed: send what it held back. */
+  private requeueQuotaFailures(): void {
+    const { outbox } = this.store.getState()
+    if (!outbox.some(({ failure }) => failure?.action === 'getAccess')) {
+      return
+    }
+    this.commitOutbox(
+      outbox.map((item) =>
+        item.failure?.action === 'getAccess'
+          ? { ...item, status: 'queued', failure: null, attempts: 0, anchorSeq: null }
+          : item
+      )
+    )
+    void this.flushOutbox()
   }
 
   private scheduleRetry(delayMs: number): void {

@@ -1,5 +1,6 @@
 import { AppText, Avatar, IconButton } from '@components/atoms'
 import { CREATOR } from '@constants'
+import { AVATAR_SIZE } from '@theme'
 import { memo } from 'react'
 import { View } from 'react-native'
 import { initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -32,7 +33,7 @@ const ChatHeader = ({ onOpenPaywall, onOpenDevPanel }: ChatHeaderProps) => {
         />
       </View>
       <View style={styles.creatorRow}>
-        <Avatar initials={CREATOR.initials} size={40} />
+        <Avatar initials={CREATOR.initials} size={AVATAR_SIZE} />
         <View style={styles.creatorText}>
           <AppText numberOfLines={1} variant="bodyStrong">
             {CREATOR.displayName}

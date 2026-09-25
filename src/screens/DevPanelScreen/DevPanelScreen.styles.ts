@@ -29,7 +29,8 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingLeft: SPACING.lg,
+    paddingBottom: SPACING.sm,
     paddingRight: SPACING.sm,
-    paddingVertical: SPACING.sm,
+    paddingTop: SPACING.lg,
   },
 })

@@ -13,6 +13,7 @@ const toRecord = ({
   attempts,
   status,
   failure,
+  anchorSeq,
 }: OutboxRecord | OutboxItem): OutboxRecord => ({
   clientId,
   text,
@@ -21,6 +22,8 @@ const toRecord = ({
   attempts,
   status,
   failure,
+  // Records written before anchors existed have no such field.
+  anchorSeq: anchorSeq ?? null,
 })
 
 /** The client's pending queue on disk. Kept apart from anything the server stores. */
@@ -30,6 +33,7 @@ export class OutboxRepository {
   public load(): Array<OutboxRecord> {
     return readJson<Array<OutboxRecord>>(this.storage, OUTBOX_KEY, [])
       .filter(({ clientId, text }) => Boolean(clientId) && typeof text === 'string')
+      .map(toRecord)
       .sort((first, second) => first.localOrder - second.localOrder)
   }
 

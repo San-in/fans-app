@@ -1,7 +1,5 @@
-import { COLORS, RADIUS, SPACING } from '@theme'
+import { AVATAR_SIZE, COLORS, RADIUS, SPACING } from '@theme'
 import { StyleSheet } from 'react-native'
-
-export const AVATAR_SIZE = 28
 
 export const styles = StyleSheet.create({
   avatarSlot: {
@@ -38,12 +36,12 @@ export const styles = StyleSheet.create({
   columnOwn: {
     alignItems: 'flex-end',
   },
+  // Same tile as the composer's gift button in the design.
   giftIcon: {
     alignItems: 'center',
-    backgroundColor: COLORS.accentSoft,
-    borderColor: COLORS.accentBorder,
-    borderRadius: RADIUS.sm,
-    borderWidth: 1,
+    backgroundColor: COLORS.giftSurface,
+    borderRadius: 10,
+    boxShadow: `inset 0px -2px 4px 0px ${COLORS.gift}`,
     height: 36,
     justifyContent: 'center',
     width: 36,

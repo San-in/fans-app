@@ -16,6 +16,8 @@ import {
   useRuntime,
 } from '@hooks'
 import type { RootStackScreenProps, ROUTES } from '@navigation/RootStack'
+import { haptics } from '@services/feedback/haptics'
+import { showToast } from '@services/feedback/toast'
 import { formatPerfResult, perfStore, requestPerfRun } from '@services/perf/perfStore'
 import { COLORS } from '@theme'
 import type { SendFault } from '@types'
@@ -56,7 +58,10 @@ const ToggleRow = ({ title, description, value, onValueChange }: ToggleRowProps)
     <Switch
       accessibilityHint={description}
       accessibilityLabel={title}
-      onValueChange={onValueChange}
+      onValueChange={(nextValue) => {
+        haptics.selection()
+        onValueChange(nextValue)
+      }}
       trackColor={{ true: COLORS.accent, false: COLORS.border }}
       value={value}
     />
@@ -88,7 +93,80 @@ const DevPanelScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.devPa
 
   const updateSettings = runtime.devSettings.update.bind(runtime.devSettings)
 
+  // Every control here changes something off screen, so each one says what it did.
+  const handleOfflineChange = (value: boolean) => {
+    updateSettings({ isOffline: value })
+    if (value) {
+      showToast('Offline: requests fail and the socket is down.', { tone: 'warning' })
+    } else {
+      showToast('Back online: catching up, then sending what’s queued.', { tone: 'success' })
+    }
+  }
+
+  const handleLatencyChange = (value: number) => {
+    updateSettings({ latencyMs: value })
+    showToast(`Network latency: ${value} ms per request.`)
+  }
+
+  const handleEnqueueFault = (fault: SendFault) => {
+    haptics.tap()
+    runtime.devSettings.enqueueSendFault(fault)
+    const queued = runtime.devSettings.getState().sendFaults
+    showToast(`Next send attempts: ${queued.map((item) => FAULT_LABELS[item]).join(', ')}.`)
+  }
+
+  const handleClearFaults = () => {
+    haptics.tap()
+    runtime.devSettings.clearSendFaults()
+    showToast('Send faults cleared.')
+  }
+
+  const handleCreatorMessages = () => {
+    haptics.tap()
+    runtime.server.simulateCreatorMessages(4)
+    showToast(
+      isOffline
+        ? 'Ethan sent 4 messages. You’re offline — they arrive after you reconnect.'
+        : 'Ethan sent 4 messages.'
+    )
+  }
+
+  const handleLegacyChange = (value: boolean) => {
+    updateSettings({ legacyDuplicateBug: value })
+    if (value) {
+      showToast('Legacy retry on: a lost response now creates a duplicate.', { tone: 'warning' })
+    } else {
+      showToast('Legacy retry off: retries reuse the message’s client ID.', { tone: 'success' })
+    }
+  }
+
+  const handleRepeatEventsChange = (value: boolean) => {
+    updateSettings({ repeatEvents: value })
+    showToast(
+      value
+        ? 'Every realtime and store event is now delivered twice.'
+        : 'Events are delivered once.'
+    )
+  }
+
+  const handlePurchaseOnAnotherDevice = () => {
+    haptics.tap()
+    runtime.appStore.simulatePurchaseOnAnotherDevice(PRODUCT_IDS.allAccessMonthly, 3)
+    showToast('Added a purchase from another device. Use Restore purchases on the paywall.')
+  }
+
+  const handleExpireAllAccess = () => {
+    haptics.tap()
+    if (!runtime.access.isAllAccessActive()) {
+      showToast('There’s no active All Access to expire.')
+      return
+    }
+    // The chat screen announces the change once the app hears about it.
+    runtime.server.simulateExpireAllAccess()
+  }
+
   const handleRunBenchmark = useCallback(() => {
+    haptics.tap()
     requestPerfRun()
     navigation.goBack()
   }, [navigation])
@@ -99,7 +177,15 @@ const DevPanelScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.devPa
       'Clears the app’s outbox and cache, the mock server’s messages and purchases, the mock store ledger and these settings.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Reset', style: 'destructive', onPress: resetEverything },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: () => {
+            resetEverything()
+            haptics.warning()
+            showToast('Everything was reset.', { tone: 'success' })
+          },
+        },
       ]
     )
   }, [resetEverything])
@@ -116,13 +202,13 @@ const DevPanelScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.devPa
         <SectionCard title="Network">
           <ToggleRow
             description="Requests fail, the socket disconnects. Survives a force-quit."
-            onValueChange={(value) => updateSettings({ isOffline: value })}
+            onValueChange={handleOfflineChange}
             title="Offline"
             value={isOffline}
           />
           <SegmentedControl
             accessibilityLabel="Network latency"
-            onChange={(value) => updateSettings({ latencyMs: value })}
+            onChange={handleLatencyChange}
             options={LATENCY_OPTIONS}
             value={latencyMs}
           />
@@ -139,29 +225,24 @@ const DevPanelScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.devPa
           <View style={styles.buttonGrid}>
             <Button
               label="Lose response"
-              onPress={() => runtime.devSettings.enqueueSendFault('loseResponse')}
+              onPress={() => handleEnqueueFault('loseResponse')}
               size="compact"
               variant="secondary"
             />
             <Button
               label="Server error 503"
-              onPress={() => runtime.devSettings.enqueueSendFault('serverError')}
+              onPress={() => handleEnqueueFault('serverError')}
               size="compact"
               variant="secondary"
             />
             <Button
               label="Rate limit 429"
-              onPress={() => runtime.devSettings.enqueueSendFault('rateLimited')}
+              onPress={() => handleEnqueueFault('rateLimited')}
               size="compact"
               variant="secondary"
             />
             {sendFaults.length > 0 && (
-              <Button
-                label="Clear"
-                onPress={() => runtime.devSettings.clearSendFaults()}
-                size="compact"
-                variant="ghost"
-              />
+              <Button label="Clear" onPress={handleClearFaults} size="compact" variant="ghost" />
             )}
           </View>
           <AppText color="textSecondary" variant="micro">
@@ -177,7 +258,7 @@ const DevPanelScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.devPa
           <Button
             icon="chatbubbles-outline"
             label="Ethan sends 4 messages"
-            onPress={() => runtime.server.simulateCreatorMessages(4)}
+            onPress={handleCreatorMessages}
             size="compact"
             variant="secondary"
           />
@@ -186,13 +267,13 @@ const DevPanelScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.devPa
         <SectionCard title="Bugs & repeats">
           <ToggleRow
             description="Every retry mints a new idempotency key — the original duplicate-message bug."
-            onValueChange={(value) => updateSettings({ legacyDuplicateBug: value })}
+            onValueChange={handleLegacyChange}
             title="Legacy retry (duplicate bug)"
             value={legacyDuplicateBug}
           />
           <ToggleRow
             description="Realtime and store events are delivered twice."
-            onValueChange={(value) => updateSettings({ repeatEvents: value })}
+            onValueChange={handleRepeatEventsChange}
             title="Repeat every event"
             value={repeatEvents}
           />
@@ -203,19 +284,13 @@ const DevPanelScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.devPa
           <View style={styles.buttonGrid}>
             <Button
               label="Purchase on another device"
-              onPress={() => {
-                runtime.appStore.simulatePurchaseOnAnotherDevice(PRODUCT_IDS.allAccessMonthly, 3)
-                Alert.alert(
-                  'Added to the store account',
-                  'The backend doesn’t know about it yet — use Restore purchases on the paywall.'
-                )
-              }}
+              onPress={handlePurchaseOnAnotherDevice}
               size="compact"
               variant="secondary"
             />
             <Button
               label="Expire All Access"
-              onPress={() => runtime.server.simulateExpireAllAccess()}
+              onPress={handleExpireAllAccess}
               size="compact"
               variant="secondary"
             />

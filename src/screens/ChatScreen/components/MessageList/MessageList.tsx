@@ -1,6 +1,7 @@
 import { IconButton } from '@components/atoms'
 import { useChatListItems, useRuntime } from '@hooks'
 import type { ChatListItem } from '@services/chat/buildChatListItems'
+import { haptics } from '@services/feedback/haptics'
 import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list'
 import {
   forwardRef,
@@ -21,6 +22,8 @@ import type { MessageListHandle, MessageListProps } from './MessageList.types'
 import OlderMessagesHeader from './OlderMessagesHeader'
 
 const AWAY_FROM_END_PX = 360
+/** Within this distance the reader counts as "at the latest message". */
+const AT_END_PX = 48
 
 const keyExtractor = (item: ChatListItem) => item.key
 
@@ -43,11 +46,31 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     const isReducedMotion = useReducedMotion()
     const [liveSince] = useState(Date.now)
     const scrollOffsetRef = useRef(0)
+    const isAtEndRef = useRef(true)
+    const contentHeightRef = useRef(0)
     const [isAwayFromEnd, setIsAwayFromEnd] = useState(false)
 
     const scrollToLatest = useCallback(() => {
       listRef.current?.scrollToEnd({ animated: !isReducedMotion })
     }, [isReducedMotion])
+
+    const handleJumpToLatest = useCallback(() => {
+      haptics.tap()
+      scrollToLatest()
+    }, [scrollToLatest])
+
+    // New rows are handled by maintainVisibleContentPosition, but a bubble that grows
+    // in place (failure text and actions) isn't: keep it in view if the reader was there.
+    const handleContentSizeChange = useCallback(
+      (_width: number, height: number) => {
+        const previousHeight = contentHeightRef.current
+        contentHeightRef.current = height
+        if (height > previousHeight && isAtEndRef.current) {
+          scrollToLatest()
+        }
+      },
+      [scrollToLatest]
+    )
 
     useImperativeHandle(
       ref,
@@ -63,6 +86,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
       scrollOffsetRef.current = contentOffset.y
       const distanceFromEnd = contentSize.height - layoutMeasurement.height - contentOffset.y
+      isAtEndRef.current = distanceFromEnd <= AT_END_PX
       const nextIsAwayFromEnd = distanceFromEnd > AWAY_FROM_END_PX
       // Only flips re-render; plain scrolling never touches React state.
       setIsAwayFromEnd((current) => (current === nextIsAwayFromEnd ? current : nextIsAwayFromEnd))
@@ -106,6 +130,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           maintainVisibleContentPosition={maintainVisibleContentPosition}
+          onContentSizeChange={handleContentSizeChange}
           onScroll={handleScroll}
           onStartReached={handleStartReached}
           onStartReachedThreshold={0.5}
@@ -121,7 +146,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
             <IconButton
               accessibilityLabel="Jump to the latest messages"
               icon="arrow-down"
-              onPress={scrollToLatest}
+              onPress={handleJumpToLatest}
               variant="soft"
             />
           </Animated.View>

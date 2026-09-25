@@ -3,7 +3,7 @@ import { useRuntime } from '@hooks'
 import { type RootStackScreenProps, ROUTES } from '@navigation/RootStack'
 import { useCallback, useRef } from 'react'
 import { Alert, View } from 'react-native'
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller'
+import { KeyboardStickyView } from 'react-native-keyboard-controller'
 import { initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { styles } from './ChatScreen.styles'
@@ -16,6 +16,7 @@ import {
   MessageList,
   type MessageListHandle,
 } from './components'
+import { useAccessFeedback } from './hooks/useAccessFeedback'
 import { useDeliveryFeedback } from './hooks/useDeliveryFeedback'
 import { usePerfBenchmark } from './hooks/usePerfBenchmark'
 
@@ -27,6 +28,7 @@ const ChatScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.chat>) =>
   const bottomInset = initialWindowMetrics?.insets.bottom ?? liveBottomInset
 
   useDeliveryFeedback()
+  useAccessFeedback()
   usePerfBenchmark({ listRef, composerRef })
 
   const openPaywall = useCallback(() => navigation.navigate(ROUTES.paywall), [navigation])
@@ -57,15 +59,13 @@ const ChatScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.chat>) =>
 
   return (
     <View style={styles.container}>
-      <ChatHeader onOpenDevPanel={openDevPanel} onOpenPaywall={openPaywall} />
-      <ConnectionBanner />
-      {/* List and composer rise together; the negative offset lets the keyboard
-          cover the composer's safe-area padding instead of leaving a gap. */}
-      <KeyboardAvoidingView
-        behavior="translate-with-padding"
-        keyboardVerticalOffset={-bottomInset}
-        style={styles.keyboardArea}
-      >
+      <View style={styles.header}>
+        <ChatHeader onOpenDevPanel={openDevPanel} onOpenPaywall={openPaywall} />
+        <ConnectionBanner />
+      </View>
+      {/* List, gift strip and composer ride up with the keyboard as one block: nothing resizes,
+          so the list never re-scrolls. The offset lets the keyboard cover the safe-area padding. */}
+      <KeyboardStickyView offset={{ closed: 0, opened: bottomInset }} style={styles.keyboardArea}>
         <MessageList ref={listRef} onEditMessage={handleEditMessage} onOpenPaywall={openPaywall} />
         <GiftStatusStrip />
         <Composer
@@ -75,7 +75,7 @@ const ChatScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.chat>) =>
           onOpenPaywall={openPaywall}
           onSent={handleSent}
         />
-      </KeyboardAvoidingView>
+      </KeyboardStickyView>
     </View>
   )
 }

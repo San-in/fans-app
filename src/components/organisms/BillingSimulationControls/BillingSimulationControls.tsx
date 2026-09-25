@@ -1,5 +1,6 @@
 import { AppText, Button, SegmentedControl, type SegmentedOption } from '@components/atoms'
 import { useDevSettingsState, usePurchasesState, useRuntime } from '@hooks'
+import { haptics } from '@services/feedback/haptics'
 import type { BackendConfirmationSetting, StoreOutcomeSetting } from '@types'
 import { memo } from 'react'
 import { View } from 'react-native'
@@ -62,7 +63,10 @@ const BillingSimulationControls = () => {
         <Button
           icon="checkmark-done"
           label={`Backend: confirm ${pendingCount} pending`}
-          onPress={() => runtime.server.simulateConfirmPendingPurchases()}
+          onPress={() => {
+            haptics.tap()
+            runtime.server.simulateConfirmPendingPurchases()
+          }}
           size="compact"
           variant="secondary"
         />

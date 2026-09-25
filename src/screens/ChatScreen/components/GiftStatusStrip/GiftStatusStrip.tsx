@@ -1,6 +1,6 @@
 import { AppText, IconButton } from '@components/atoms'
+import { GiftIcon } from '@components/icons'
 import { CREATOR, PRODUCT_IDS } from '@constants'
-import { Ionicons } from '@expo/vector-icons'
 import { usePurchasesState, useRuntime } from '@hooks'
 import { type ColorName, COLORS } from '@theme'
 import type { PurchaseOutcome } from '@types'
@@ -104,7 +104,7 @@ const GiftStatusStrip = () => {
       {content.isBusy ? (
         <ActivityIndicator color={COLORS.accent} size="small" />
       ) : (
-        <Ionicons color={COLORS[content.color]} name="gift-outline" size={18} />
+        <GiftIcon color={COLORS[content.color]} size={18} />
       )}
       <View style={styles.text}>
         <AppText color={content.color} variant="caption">

@@ -57,6 +57,55 @@ const toPendingItem = (outboxItem: OutboxItem): PendingListItem => {
   return item
 }
 
+type ThreadEntry =
+  { message: MessageDto; outboxItem?: never } | { outboxItem: OutboxItem; message?: never }
+
+const isAnchored = (item: OutboxItem): item is OutboxItem & { anchorSeq: number } =>
+  item.status === 'failed' && item.anchorSeq !== null
+
+/**
+ * Confirmed messages in seq order. A failed message stays where it failed (after
+ * its anchor), so newer messages land below it. Queued ones always come last, in
+ * local order: their seq doesn't exist yet and will be the newest.
+ */
+const mergeThread = (
+  messages: ReadonlyArray<MessageDto>,
+  outbox: ReadonlyArray<OutboxItem>
+): Array<ThreadEntry> => {
+  const anchored = outbox
+    .filter(isAnchored)
+    .sort(
+      (first, second) => first.anchorSeq - second.anchorSeq || first.localOrder - second.localOrder
+    )
+  const entries: Array<ThreadEntry> = []
+  let anchoredIndex = 0
+  let nextAnchored = anchored[0]
+  const addAnchoredBefore = (seq: number) => {
+    while (nextAnchored && nextAnchored.anchorSeq < seq) {
+      entries.push({ outboxItem: nextAnchored })
+      anchoredIndex += 1
+      nextAnchored = anchored[anchoredIndex]
+    }
+  }
+  messages.forEach((message) => {
+    addAnchoredBefore(message.seq)
+    entries.push({ message })
+  })
+  addAnchoredBefore(Number.POSITIVE_INFINITY)
+  outbox.forEach((item) => {
+    if (!isAnchored(item)) {
+      entries.push({ outboxItem: item })
+    }
+  })
+  return entries
+}
+
+const getEntryAuthor = (entry: ThreadEntry | undefined) =>
+  entry?.outboxItem ? CURRENT_USER_ID : entry?.message.authorId
+
+const getEntryTime = (entry: ThreadEntry) =>
+  entry.outboxItem ? entry.outboxItem.createdAt : entry.message.createdAt
+
 export const buildChatListItems = (
   messages: ReadonlyArray<MessageDto>,
   outbox: ReadonlyArray<OutboxItem>,
@@ -73,19 +122,20 @@ export const buildChatListItems = (
     }
   }
 
-  messages.forEach((message, index) => {
-    addDaySeparatorIfNeeded(message.createdAt)
-    const nextMessage = messages[index + 1]
+  const entries = mergeThread(messages, outbox)
+  entries.forEach((entry, index) => {
+    addDaySeparatorIfNeeded(getEntryTime(entry))
+    if (entry.outboxItem) {
+      items.push(toPendingItem(entry.outboxItem))
+      return
+    }
+    const { message } = entry
+    const nextEntry = entries[index + 1]
     const isLastInGroup =
-      !nextMessage ||
-      nextMessage.authorId !== message.authorId ||
-      getLocalDayKey(nextMessage.createdAt) !== getLocalDayKey(message.createdAt)
+      !nextEntry ||
+      getEntryAuthor(nextEntry) !== message.authorId ||
+      getLocalDayKey(getEntryTime(nextEntry)) !== getLocalDayKey(message.createdAt)
     items.push(toMessageItem(message, isLastInGroup))
-  })
-
-  outbox.forEach((outboxItem) => {
-    addDaySeparatorIfNeeded(outboxItem.createdAt)
-    items.push(toPendingItem(outboxItem))
   })
 
   return items

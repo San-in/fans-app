@@ -5,6 +5,10 @@ export const haptics = {
   tap: () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {})
   },
+  /** Switches and segmented controls, like a native picker tick. */
+  selection: () => {
+    void Haptics.selectionAsync().catch(() => {})
+  },
   success: () => {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
   },

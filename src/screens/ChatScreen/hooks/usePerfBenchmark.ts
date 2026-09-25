@@ -1,4 +1,5 @@
 import { useRuntime } from '@hooks'
+import { dismissToast, showToast } from '@services/feedback/toast'
 import { FrameSampler } from '@services/perf/FrameSampler'
 import {
   formatPerfResult,
@@ -48,8 +49,13 @@ export const usePerfBenchmark = ({ listRef, composerRef }: UsePerfBenchmarkOptio
       }
     }
 
+    // Sticky toasts name the current phase, so a tester knows it's running and what it does.
+    const announcePhase = (runNumber: number, phase: string) =>
+      showToast(`Benchmark run ${runNumber}: ${phase}`, { durationMs: null })
+
     const run = async (runNumber: number) => {
       perfStore.setState({ isRunning: true, requestedRun: null })
+      announcePhase(runNumber, 'starting — don’t touch the screen…')
       await delay(SETTLE_BEFORE_START_MS)
 
       const messagesLoadedBefore = runtime.chat.getState().messages.length
@@ -60,11 +66,14 @@ export const usePerfBenchmark = ({ listRef, composerRef }: UsePerfBenchmarkOptio
       sampler.start()
       fpsMonitor.startTracking()
 
+      announcePhase(runNumber, 'scrolling up through the history…')
       await scrollBy(SCROLL_UP_FRAMES, -SCROLL_STEP_PX)
+      announcePhase(runNumber, 'typing (nothing is sent)…')
       for (let length = 1; length <= TYPED_TEXT.length; length += 1) {
         composerRef.current?.setText(TYPED_TEXT.slice(0, length))
         await delay(KEYSTROKE_INTERVAL_MS)
       }
+      announcePhase(runNumber, 'scrolling back down…')
       await scrollBy(SCROLL_DOWN_FRAMES, SCROLL_STEP_PX * 2)
       listRef.current?.scrollToLatest()
       composerRef.current?.setText('')
@@ -86,6 +95,7 @@ export const usePerfBenchmark = ({ listRef, composerRef }: UsePerfBenchmarkOptio
         jsHeapAfterMb: readJsHeapMb(),
       }
 
+      dismissToast()
       perfStore.setState(({ results }) => ({ isRunning: false, results: [result, ...results] }))
       console.info(`[perf] ${JSON.stringify(result)}`)
       Alert.alert('Benchmark finished', formatPerfResult(result))

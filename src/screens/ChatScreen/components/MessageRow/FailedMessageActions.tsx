@@ -27,7 +27,18 @@ const FailedMessageActions = ({
     runtime.chat.retryMessage(clientId)
   }, [clientId, runtime])
 
+  const handleEdit = useCallback(() => {
+    haptics.tap()
+    onEditMessage(clientId)
+  }, [clientId, onEditMessage])
+
+  const handleGetAccess = useCallback(() => {
+    haptics.tap()
+    onOpenPaywall()
+  }, [onOpenPaywall])
+
   const handleDelete = useCallback(() => {
+    haptics.tap()
     Alert.alert('Delete this message?', 'It hasn’t been sent, so Ethan will never see it.', [
       { text: 'Keep', style: 'cancel' },
       {
@@ -67,7 +78,7 @@ const FailedMessageActions = ({
             accessibilityHint="Moves the text back into the message box"
             icon="create-outline"
             label="Edit"
-            onPress={() => onEditMessage(clientId)}
+            onPress={handleEdit}
             size="compact"
             variant="secondary"
           />
@@ -76,7 +87,7 @@ const FailedMessageActions = ({
           <Button
             icon="star"
             label="Get All Access"
-            onPress={onOpenPaywall}
+            onPress={handleGetAccess}
             size="compact"
             variant="primary"
           />

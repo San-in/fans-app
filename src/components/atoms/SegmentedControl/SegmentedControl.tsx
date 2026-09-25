@@ -1,4 +1,5 @@
 import { AppText } from '@components/atoms/AppText'
+import { haptics } from '@services/feedback/haptics'
 import { Pressable, View } from 'react-native'
 
 import { styles } from './SegmentedControl.styles'
@@ -23,7 +24,12 @@ const SegmentedControl = <TValue extends string | number>({
           accessibilityLabel={option.label}
           accessibilityRole="radio"
           accessibilityState={{ checked: isSelected }}
-          onPress={() => onChange(option.value)}
+          onPress={() => {
+            if (!isSelected) {
+              haptics.selection()
+              onChange(option.value)
+            }
+          }}
           style={({ pressed }) => [
             styles.option,
             isSelected && styles.optionSelected,

@@ -63,6 +63,7 @@ const PaywallScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.paywal
   }, [runtime])
 
   const handleRestore = useCallback(() => {
+    haptics.tap()
     void runtime.purchases.restore()
   }, [runtime])
 

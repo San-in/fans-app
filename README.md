@@ -48,7 +48,7 @@ the controls wipes all four databases.
 | Missed messages + no duplicates | While still offline: ⋮ → **Ethan sends 4 messages** → **Offline** off. The four arrive through catch-up first, then the three queued messages are sent once, in the order typed. |
 | Lost response, then retry | ⋮ → **Lose response** → send. The server stores it, the reply never arrives, the client times out and retries with the same clientId → one copy. Tap **Lose response** 3× to exhaust the automatic attempts and retry by hand from the failed bubble. |
 | Reproduce the original bug | ⋮ → **Legacy retry (duplicate bug)** on → **Lose response** → send → two copies appear. |
-| Failure that needs a different action | Send a message containing a link → rejected with an explanation and **Edit**. Send more than the 10 free messages → **Get All Access**. |
+| Failure that needs a different action | Send a message containing a link → rejected with an explanation and **Edit**. Send more than the 10 free messages → **Get All Access**; once the purchase is confirmed, the held message is sent on its own. Newer messages appear below a failed one. |
 | Purchase / cancel / fail | Paywall → Simulation → Store result **Success / Cancel / Fail** → Subscribe. |
 | Delayed confirmation | Backend confirmation **Delayed** (6 s) or **Manual** → Subscribe → *Payment received — confirming your access*; access unlocks only when the backend confirms (**Backend: confirm pending** for Manual). |
 | Restore | ⋮ → **Purchase on another device** → paywall → **Restore purchases**. |
@@ -90,9 +90,13 @@ npm run test:duplicate-bug  # same test against the legacy retry path: fails, "E
   system (app, mock server, mock store, dev settings). A synchronous commit is what makes
   "persist before treating as queued" literal. MMKV would work too but needs a dev build;
   this way the whole project also runs in Expo Go.
-- **Order:** the server's `seq` is the only order. Pending messages render after confirmed
+- **Order:** the server's `seq` is the only order. Queued messages render after confirmed
   ones in local order; the outbox drains serially, and a message in backoff blocks the ones
-  behind it so the server never assigns them earlier seqs.
+  behind it so the server never assigns them earlier seqs. A **failed** message stays where
+  it failed, so newer messages land below it; retrying moves it to the end, where its new
+  seq will be.
+- **Held by the free limit:** once All Access is confirmed, messages rejected for the quota
+  are sent automatically (same clientId), instead of waiting for a manual retry.
 - **Realtime:** a mock socket that only delivers while connected. After every (re)connect
   the client catches up by cursor before sending — push is never trusted for completeness.
 - **No jumping:** own messages keep the key `c:<clientId>` from pending to confirmed, and
@@ -101,9 +105,19 @@ npm run test:duplicate-bug  # same test against the legacy retry path: fails, "E
   get 10 messages, All Access is unlimited — plus gifts as a consumable. Access is only
   ever set from a backend answer (`AccessService.apply`).
 - **List:** FlashList v2 with `maintainVisibleContentPosition` (`startRenderingFromBottom`)
-  instead of an inverted list, `onStartReached` pagination, and keyboard-controller's
-  `KeyboardAvoidingView` in `translate-with-padding` mode (its chat mode): list and composer
-  rise together, and the keyboard covers the composer's safe-area padding.
+  instead of an inverted list and `onStartReached` pagination. A bubble that grows at the
+  bottom (failure actions) is kept in view if the reader was at the end.
+- **Keyboard:** list, gift strip and composer move up as one `KeyboardStickyView`, in sync
+  with the keyboard; nothing resizes, so the list never re-scrolls. `KeyboardAvoidingView`
+  `translate-with-padding` was tried first and dropped: it applies its padding after the
+  animation, which made the list jump once more. `KeyboardChatScrollView` needs
+  keyboard-controller 1.20+, which Expo Go 54 doesn't ship. Trade-off: while the keyboard is
+  open, the top of the list slides under the header. On iOS a pending autocorrection can
+  land after the composer is cleared; the composer ignores edits in the first 300 ms after a
+  send so the field stays empty.
+- **Feedback:** toasts for every simulation control and for access changes (drawn over
+  modals), haptics for sends, failures, purchases, switches and segments. Figma icons are
+  react-native-svg components.
 - **SDK 54:** newer SDKs need Xcode 26.2+ (55) or 26.4+ (56/57); 54 builds with Xcode 16.1+,
   so reviewers can run it with an older toolchain too.
 - **Navigation:** React Navigation native-stack (three screens) rather than Expo Router.
@@ -126,14 +140,13 @@ npm run test:duplicate-bug  # same test against the legacy retry path: fails, "E
 
 ## Tests
 
-`npm test` — **TODO paste the final output.** At the time of the scaffold: 6 suites,
-21 tests, all passing.
+`npm test` — **TODO paste the final output.** Last run: 6 suites, 23 tests, all passing.
 
 | Test | Covers |
 |---|---|
 | `chat/duplicateOnLostResponse` | lost response → retry → one copy; lost response → force-quit → one copy |
 | `chat/restartRecovery` | persisted before shown; 3 offline messages survive a restart, 4 missed messages recovered first, each send stored once |
-| `chat/outboxDelivery` | local order with a failing head, repeated realtime events, give-up + manual retry, rejection needs edit, quota |
+| `chat/outboxDelivery` | local order with a failing head, repeated realtime events, give-up + manual retry, rejection needs edit, quota, held message sent after All Access, a failed message keeps its place across a restart |
 | `billing/delayedConfirmation` | no access while the backend is pending; resume after a force-quit mid-verification |
 | `billing/purchaseFlows` | double tap, cancel, unrelated failure keeps access, repeated store events, restore, expired restore |
 | `mock/MockServer` | idempotency, persistence, deterministic 50k history paging |

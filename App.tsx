@@ -1,3 +1,4 @@
+import { ToastHost } from '@components/organisms'
 import { RootStack } from '@navigation/RootStack'
 import { RuntimeProvider } from '@providers'
 import { StatusBar } from 'expo-status-bar'
@@ -10,6 +11,7 @@ const App = () => (
       <RuntimeProvider>
         <RootStack />
       </RuntimeProvider>
+      <ToastHost />
       <StatusBar style="dark" />
     </KeyboardProvider>
   </SafeAreaProvider>

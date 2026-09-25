@@ -1,14 +1,26 @@
-import { AppText, IconButton } from '@components/atoms'
+import { AppText } from '@components/atoms'
+import { GiftIcon, SendIcon } from '@components/icons'
 import { CREATOR, MESSAGE_MAX_LENGTH } from '@constants'
+import { Ionicons } from '@expo/vector-icons'
 import { usePurchasesState, useRuntime } from '@hooks'
 import { haptics } from '@services/feedback/haptics'
+import { showToast } from '@services/feedback/toast'
 import { COLORS, MAX_FONT_SCALE } from '@theme'
 import { forwardRef, memo, useCallback, useImperativeHandle, useRef, useState } from 'react'
-import { Alert, TextInput, View } from 'react-native'
+import { Alert, Pressable, TextInput, View } from 'react-native'
 
-import { styles, useComposerStyles } from './Composer.styles'
+import { COMPOSER_HIT_SLOP, styles, useComposerStyles } from './Composer.styles'
 import type { ComposerHandle, ComposerProps } from './Composer.types'
+import ComposerButton from './ComposerButton'
 import QuotaLabel from './QuotaLabel'
+
+/**
+ * iOS can commit a pending autocorrection as the send button is tapped. That
+ * edit reaches JS after we cleared the field, carrying a newer native event
+ * count, so the native side drops our clear and the corrected word reappears.
+ * Ignoring edits right after a send lets the controlled input re-apply ''.
+ */
+const LATE_EDIT_WINDOW_MS = 300
 
 /**
  * Owns the draft text locally so typing re-renders only this component —
@@ -18,6 +30,7 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(
   ({ bottomInset, onSent, onGiftPress, onOpenPaywall }, ref) => {
     const { runtime } = useRuntime()
     const inputRef = useRef<TextInput>(null)
+    const lastSentAtRef = useRef(0)
     const [text, setText] = useState('')
     const isPurchaseBusy = usePurchasesState(({ flow }) => flow.status !== 'idle')
     const dynamicStyles = useComposerStyles(bottomInset)
@@ -38,6 +51,13 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const isOverLimit = text.length > MESSAGE_MAX_LENGTH
     const canSend = text.trim().length > 0 && !isOverLimit
 
+    const handleChangeText = useCallback((nextText: string) => {
+      if (Date.now() - lastSentAtRef.current < LATE_EDIT_WINDOW_MS) {
+        return
+      }
+      setText(nextText)
+    }, [])
+
     const handleSend = useCallback(() => {
       if (!canSend) {
         return
@@ -45,6 +65,7 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(
       const result = runtime.chat.sendMessage(text)
       if (result.isAccepted) {
         haptics.tap()
+        lastSentAtRef.current = Date.now()
         setText('')
         onSent()
         return
@@ -58,38 +79,60 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(
       }
     }, [canSend, onSent, runtime, text])
 
+    const handleGiftPress = useCallback(() => {
+      haptics.tap()
+      onGiftPress()
+    }, [onGiftPress])
+
+    const handleAttachPress = useCallback(() => {
+      haptics.tap()
+      showToast('Attachments aren’t part of this demo — only text and gifts.')
+    }, [])
+
     return (
       <View style={[styles.container, dynamicStyles.container]}>
         <View style={styles.inputRow}>
           <View style={[styles.inputWrapper, isOverLimit && styles.inputWrapperError]}>
+            <Pressable
+              accessibilityHint="Attachments aren’t available in this demo"
+              accessibilityLabel="Add attachment"
+              accessibilityRole="button"
+              hitSlop={COMPOSER_HIT_SLOP}
+              onPress={handleAttachPress}
+              style={styles.attachButton}
+            >
+              <Ionicons color={COLORS.iconMuted} name="add-circle" size={20} />
+            </Pressable>
             <TextInput
               ref={inputRef}
               accessibilityHint="Messages are saved on this device until they are delivered"
               accessibilityLabel={`Message ${CREATOR.displayName}`}
               maxFontSizeMultiplier={MAX_FONT_SCALE}
               multiline
-              onChangeText={setText}
+              onChangeText={handleChangeText}
               placeholder={`Message ${CREATOR.displayName}…`}
               placeholderTextColor={COLORS.textSecondary}
               style={styles.input}
               value={text}
             />
           </View>
-          <IconButton
+          <ComposerButton
             accessibilityHint="Opens a simulated gift purchase"
             accessibilityLabel="Send a gift"
-            icon="gift-outline"
             isDisabled={isPurchaseBusy}
-            onPress={onGiftPress}
-            variant="soft"
-          />
-          <IconButton
+            onPress={handleGiftPress}
+            variant="gift"
+          >
+            <GiftIcon />
+          </ComposerButton>
+          <ComposerButton
             accessibilityLabel="Send message"
-            icon="send"
             isDisabled={!canSend}
             onPress={handleSend}
-            variant="primary"
-          />
+            variant="send"
+          >
+            <SendIcon />
+          </ComposerButton>
         </View>
         <View style={styles.metaRow}>
           <AppText

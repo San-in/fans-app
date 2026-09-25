@@ -9,7 +9,8 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.sanin.fanschat"
+      "bundleIdentifier": "com.sanin.fanschat",
+      "appleTeamId": "ZH64VTB7GF"
     },
     "android": {
       "package": "com.sanin.fanschat",
@@ -25,6 +26,9 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-sqlite", "expo-font"]
+    "plugins": [
+      "expo-sqlite",
+      "expo-font"
+    ]
   }
 }

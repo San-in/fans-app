@@ -53,27 +53,45 @@ export const usePerfBenchmark = ({ listRef, composerRef }: UsePerfBenchmarkOptio
       let waitingAtTopMs = 0
       let requestedOffset: number | null = null
       let reportedOffset: number | null = null
+      let anchorKey: string | null = null
       let previousFrameAt = performance.now()
       for (let frame = 0; frame < frames; frame += 1) {
         const list = listRef.current
         if (!list) {
           break
         }
-        // Scroll events are throttled, so the reported offset can be a frame old. Build on
-        // our own last request unless the list reported a new offset (e.g. a page was
-        // prepended and maintainVisibleContentPosition moved it) — a steady step per frame.
-        const currentOffset = list.getScrollOffset()
-        const baseOffset =
-          requestedOffset !== null && currentOffset === reportedOffset
-            ? requestedOffset
-            : currentOffset
-        reportedOffset = currentOffset
-        requestedOffset = Math.max(0, baseOffset + stepPx)
-        list.scrollToOffset(requestedOffset)
+        const isPinnedAtTop = requestedOffset === 0 && runtime.chat.getState().hasOlder
+        let isWaiting = false
+        if (isPinnedAtTop) {
+          // Like a finger at the top: no scrolling while the page loads. Once it lands the
+          // list keeps the old top message in place; continue from where it now sits. The
+          // scroll event for that shift can be throttled away, so the reported offset isn't
+          // trusted here — pushing from a stale 0 would throw the list back to the top.
+          anchorKey = anchorKey ?? list.getTopMessageKey()
+          const anchorOffset = anchorKey === null ? null : list.getItemOffset(anchorKey)
+          if (anchorOffset !== null && anchorOffset > 0) {
+            requestedOffset = anchorOffset
+            reportedOffset = list.getScrollOffset()
+            anchorKey = null
+          } else {
+            isWaiting = true
+          }
+        } else {
+          // Scroll events are throttled, so the reported offset can be a frame old. Build on
+          // our own last request unless the list reported a new one — a steady step per frame.
+          const currentOffset = list.getScrollOffset()
+          const baseOffset =
+            requestedOffset !== null && currentOffset === reportedOffset
+              ? requestedOffset
+              : currentOffset
+          reportedOffset = currentOffset
+          requestedOffset = Math.max(0, baseOffset + stepPx)
+          list.scrollToOffset(requestedOffset)
+        }
         await nextFrame()
 
         const frameAt = performance.now()
-        if (requestedOffset === 0 && runtime.chat.getState().hasOlder) {
+        if (isWaiting) {
           waitingAtTopMs += frameAt - previousFrameAt
         }
         previousFrameAt = frameAt

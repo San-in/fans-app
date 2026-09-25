@@ -43,6 +43,8 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     const { runtime } = useRuntime()
     const listRef = useRef<FlashListRef<ChatListItem>>(null)
     const items = useChatListItems()
+    const itemsRef = useRef(items)
+    itemsRef.current = items
     const isReducedMotion = useReducedMotion()
     const [liveSince] = useState(Date.now)
     const scrollOffsetRef = useRef(0)
@@ -78,6 +80,12 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         scrollToLatest,
         scrollToOffset: (offset) => listRef.current?.scrollToOffset({ offset, animated: false }),
         getScrollOffset: () => scrollOffsetRef.current,
+        getTopMessageKey: () => itemsRef.current.find(({ type }) => type !== 'day')?.key ?? null,
+        getItemOffset: (key) => {
+          const index = itemsRef.current.findIndex((item) => item.key === key)
+          const layout = index >= 0 ? listRef.current?.getLayout(index) : undefined
+          return layout ? (listRef.current?.getFirstItemOffset() ?? 0) + layout.y : null
+        },
       }),
       [scrollToLatest]
     )

@@ -155,18 +155,22 @@ npm run test:duplicate-bug  # same test against the legacy retry path: fails, "E
 
 **TODO — fill in from real runs.** Method:
 
-1. `npm run ios:release` (Release, Hermes). Record device/simulator and OS.
-2. ⋮ → **Run scroll & type benchmark**: flings up ~19,000 px through the history (pages
-   load as it goes), types a 67-character sentence, flings back down. Same steps and the
-   same seeded history every run. The result appears in an alert and in the Metro log as
-   `[perf] {…}`.
-3. Run it 3× per variant, keep the median. UI-thread FPS from the Perf Monitor, memory from
-   Xcode's Debug navigator / Instruments (Allocations).
+1. `npm run ios:release -- --device` (Release, Hermes). Record the device and OS.
+2. ⋮ → **Reset everything**, then ⋮ → **Run scroll & type benchmark**. It scrolls to the
+   bottom, then flings up ~19,000 px at a steady 80 px per frame (pages load as it goes),
+   types a 67-character sentence and flings back down. Same steps and the same seeded
+   history every run; a run that didn't start from a reset is flagged as not comparable.
+3. The alert (and `[perf] {…}` in the log) reports JS frame timing overall and per phase
+   (scroll up / typing / scroll down), and how long the scroll-up sat at the top of the
+   loaded window waiting for the next page.
+4. Run it 3× per variant, keep the median. Memory from Xcode (Debug → Attach to Process →
+   Memory) or `adb shell dumpsys meminfo`; Android UI-thread jank from
+   `adb shell dumpsys gfxinfo`.
 
-| Variant | Build | JS FPS avg / min | Dropped JS frames | Longest frame | UI FPS | Memory |
-|---|---|---|---|---|---|---|
-| before — **TODO** | Release | | | | | |
-| after — **TODO** | Release | | | | | |
+| Variant | Build | JS FPS avg / min | Dropped JS frames (up / typing / down) | Longest frame | Waiting at top | UI jank | Memory |
+|---|---|---|---|---|---|---|---|
+| before — **TODO** | Release | | | | | | |
+| after — **TODO** | Release | | | | | | |
 
 Bottleneck investigated: **TODO**. The JS frame sampler cannot see UI-thread drops;
 simulator numbers are not proof of performance on a real phone.

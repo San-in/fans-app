@@ -1,7 +1,10 @@
+import { MESSAGE_PAGE_SIZE } from '@constants'
 import { useRuntime } from '@hooks'
 import { dismissToast, showToast } from '@services/feedback/toast'
 import { FrameSampler } from '@services/perf/FrameSampler'
 import {
+  BENCHMARK_PHASES,
+  type BenchmarkPhase,
   formatPerfResult,
   type PerfResult,
   perfStore,
@@ -22,6 +25,12 @@ const SCROLL_STEP_PX = 80
 const TYPED_TEXT = 'Typing while older history keeps paging in — does it stay smooth?'
 const KEYSTROKE_INTERVAL_MS = 35
 
+const PHASE_LABELS: Record<BenchmarkPhase, string> = {
+  scrollUp: 'scrolling up through the history…',
+  typing: 'typing (nothing is sent)…',
+  scrollDown: 'scrolling back down…',
+}
+
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
 type UsePerfBenchmarkOptions = {
@@ -32,48 +41,75 @@ type UsePerfBenchmarkOptions = {
 /**
  * A repeatable scroll-and-type sequence: fling up through the 50k history
  * (pages load as it goes), type a sentence, fling back down. Same steps and
- * same deterministic history every run, so before/after numbers compare.
+ * same deterministic history every run, so before/after numbers compare —
+ * as long as each run starts right after "Reset everything" (flagged if not).
  */
 export const usePerfBenchmark = ({ listRef, composerRef }: UsePerfBenchmarkOptions) => {
   const { runtime } = useRuntime()
 
   useEffect(() => {
+    /** Returns how long the list sat at the top of the loaded window, waiting for a page. */
     const scrollBy = async (frames: number, stepPx: number) => {
+      let waitingAtTopMs = 0
+      let requestedOffset: number | null = null
+      let reportedOffset: number | null = null
+      let previousFrameAt = performance.now()
       for (let frame = 0; frame < frames; frame += 1) {
         const list = listRef.current
         if (!list) {
-          return
+          break
         }
-        list.scrollToOffset(Math.max(0, list.getScrollOffset() + stepPx))
+        // Scroll events are throttled, so the reported offset can be a frame old. Build on
+        // our own last request unless the list reported a new offset (e.g. a page was
+        // prepended and maintainVisibleContentPosition moved it) — a steady step per frame.
+        const currentOffset = list.getScrollOffset()
+        const baseOffset =
+          requestedOffset !== null && currentOffset === reportedOffset
+            ? requestedOffset
+            : currentOffset
+        reportedOffset = currentOffset
+        requestedOffset = Math.max(0, baseOffset + stepPx)
+        list.scrollToOffset(requestedOffset)
         await nextFrame()
+
+        const frameAt = performance.now()
+        if (requestedOffset === 0 && runtime.chat.getState().hasOlder) {
+          waitingAtTopMs += frameAt - previousFrameAt
+        }
+        previousFrameAt = frameAt
       }
+      return Math.round(waitingAtTopMs)
     }
 
-    // Sticky toasts name the current phase, so a tester knows it's running and what it does.
-    const announcePhase = (runNumber: number, phase: string) =>
-      showToast(`Benchmark run ${runNumber}: ${phase}`, { durationMs: null })
+    const announce = (runNumber: number, text: string) =>
+      showToast(`Benchmark run ${runNumber}: ${text}`, { durationMs: null })
 
     const run = async (runNumber: number) => {
       perfStore.setState({ isRunning: true, requestedRun: null })
-      announcePhase(runNumber, 'starting — don’t touch the screen…')
+      announce(runNumber, 'starting — don’t touch the screen…')
+      listRef.current?.scrollToLatest()
       await delay(SETTLE_BEFORE_START_MS)
 
       const messagesLoadedBefore = runtime.chat.getState().messages.length
       const jsHeapBeforeMb = readJsHeapMb()
-      const sampler = new FrameSampler()
+      const sampler = new FrameSampler<BenchmarkPhase>(BENCHMARK_PHASES)
       const fpsMonitor = new JSFPSMonitor()
+      const startPhase = (phase: BenchmarkPhase) => {
+        sampler.setPhase(phase)
+        announce(runNumber, PHASE_LABELS[phase])
+      }
       const startedAt = Date.now()
       sampler.start()
       fpsMonitor.startTracking()
 
-      announcePhase(runNumber, 'scrolling up through the history…')
-      await scrollBy(SCROLL_UP_FRAMES, -SCROLL_STEP_PX)
-      announcePhase(runNumber, 'typing (nothing is sent)…')
+      startPhase('scrollUp')
+      const waitingAtTopMs = await scrollBy(SCROLL_UP_FRAMES, -SCROLL_STEP_PX)
+      startPhase('typing')
       for (let length = 1; length <= TYPED_TEXT.length; length += 1) {
         composerRef.current?.setText(TYPED_TEXT.slice(0, length))
         await delay(KEYSTROKE_INTERVAL_MS)
       }
-      announcePhase(runNumber, 'scrolling back down…')
+      startPhase('scrollDown')
       await scrollBy(SCROLL_DOWN_FRAMES, SCROLL_STEP_PX * 2)
       listRef.current?.scrollToLatest()
       composerRef.current?.setText('')
@@ -89,6 +125,8 @@ export const usePerfBenchmark = ({ listRef, composerRef }: UsePerfBenchmarkOptio
         averageJsFps: jsFps.averageFPS,
         minimumJsFps: jsFps.minFPS,
         latencyMs: runtime.devSettings.getState().latencyMs,
+        isFreshStart: messagesLoadedBefore === MESSAGE_PAGE_SIZE,
+        waitingAtTopMs,
         messagesLoadedBefore,
         messagesLoadedAfter: runtime.chat.getState().messages.length,
         jsHeapBeforeMb,

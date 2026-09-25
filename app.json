@@ -1,15 +1,19 @@
 {
   "expo": {
-    "name": "fans-chat",
+    "name": "FanSuite Chat",
     "slug": "fans-chat",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "scheme": "fanschat",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.sanin.fanschat"
     },
     "android": {
+      "package": "com.sanin.fanschat",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -20,6 +24,7 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": ["expo-sqlite", "expo-font"]
   }
 }

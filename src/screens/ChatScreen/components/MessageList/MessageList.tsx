@@ -2,6 +2,7 @@ import { IconButton } from '@components/atoms'
 import { useChatListItems, useRuntime } from '@hooks'
 import type { ChatListItem } from '@services/chat/buildChatListItems'
 import { haptics } from '@services/feedback/haptics'
+import { perfStore } from '@services/perf/perfStore'
 import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list'
 import {
   forwardRef,
@@ -14,6 +15,7 @@ import {
 } from 'react'
 import { type NativeScrollEvent, type NativeSyntheticEvent, View } from 'react-native'
 import Animated, { FadeIn, FadeOut, ReduceMotion, useReducedMotion } from 'react-native-reanimated'
+import { useStore } from 'zustand'
 
 import { MessageRow } from '../MessageRow'
 import EmptyThread from './EmptyThread'
@@ -46,6 +48,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     const itemsRef = useRef(items)
     itemsRef.current = items
     const isReducedMotion = useReducedMotion()
+    const prefetchScreens = useStore(perfStore, (state) => state.prefetchScreens)
     const [liveSince] = useState(Date.now)
     const scrollOffsetRef = useRef(0)
     const isAtEndRef = useRef(true)
@@ -80,7 +83,32 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         scrollToLatest,
         scrollToOffset: (offset) => listRef.current?.scrollToOffset({ offset, animated: false }),
         getScrollOffset: () => scrollOffsetRef.current,
-        getTopMessageKey: () => itemsRef.current.find(({ type }) => type !== 'day')?.key ?? null,
+        getAnchorAt: (offset) => {
+          const list = listRef.current
+          const currentItems = itemsRef.current
+          if (!list || currentItems.length === 0) {
+            return null
+          }
+          const firstItemOffset = list.getFirstItemOffset()
+          const startsAtOrAbove = (index: number) => {
+            const layout = list.getLayout(index)
+            return layout !== undefined && firstItemOffset + layout.y <= offset
+          }
+          // Rows are laid out top to bottom: binary-search the last one starting above the offset.
+          let low = 0
+          let high = currentItems.length - 1
+          while (low < high) {
+            const middle = Math.ceil((low + high) / 2)
+            if (startsAtOrAbove(middle)) {
+              low = middle
+            } else {
+              high = middle - 1
+            }
+          }
+          const item = currentItems[low]
+          const layout = item ? list.getLayout(low) : undefined
+          return item && layout ? { key: item.key, offset: firstItemOffset + layout.y } : null
+        },
         getItemOffset: (key) => {
           const index = itemsRef.current.findIndex((item) => item.key === key)
           const layout = index >= 0 ? listRef.current?.getLayout(index) : undefined
@@ -141,7 +169,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
           onContentSizeChange={handleContentSizeChange}
           onScroll={handleScroll}
           onStartReached={handleStartReached}
-          onStartReachedThreshold={0.5}
+          onStartReachedThreshold={prefetchScreens}
           renderItem={renderItem}
           scrollEventThrottle={32}
         />

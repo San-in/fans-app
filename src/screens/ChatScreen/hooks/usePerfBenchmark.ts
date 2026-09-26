@@ -33,6 +33,15 @@ const PHASE_LABELS: Record<BenchmarkPhase, string> = {
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
+/**
+ * Where the benchmark holds the list, like a finger that stays on a row across phases:
+ * the offset it asked for, and the row that was at the top of the screen then.
+ */
+type Finger = {
+  targetOffset: number
+  anchor: { key: string; offset: number } | null
+}
+
 type UsePerfBenchmarkOptions = {
   listRef: RefObject<MessageListHandle | null>
   composerRef: RefObject<ComposerHandle | null>
@@ -48,56 +57,30 @@ export const usePerfBenchmark = ({ listRef, composerRef }: UsePerfBenchmarkOptio
   const { runtime } = useRuntime()
 
   useEffect(() => {
-    /** Returns how long the list sat at the top of the loaded window, waiting for a page. */
-    const scrollBy = async (frames: number, stepPx: number) => {
+    /** Returns how long the scroll-up sat at the top of the loaded history, waiting for a page. */
+    const scrollBy = async (finger: Finger, frames: number, stepPx: number) => {
       let waitingAtTopMs = 0
-      let requestedOffset: number | null = null
-      let reportedOffset: number | null = null
-      /** The top message when the scroll hit the top, and where it sat then. */
-      let pin: { key: string; offset: number; messageCount: number } | null = null
       let previousFrameAt = performance.now()
       for (let frame = 0; frame < frames; frame += 1) {
         const list = listRef.current
         if (!list) {
           break
         }
-        const { hasOlder, messages } = runtime.chat.getState()
-        const isPinnedAtTop = requestedOffset === 0 && hasOlder
-        let isWaiting = false
-        if (isPinnedAtTop) {
-          // Like a finger at the top: no scrolling while the page loads. Once it lands, the
-          // list keeps the old top message where it was on screen, so the real offset is how
-          // far that message moved down. The scroll event for that shift can be throttled
-          // away — pushing from a stale 0 would throw the list back to the top.
-          if (!pin) {
-            const key = list.getTopMessageKey()
-            const offset = key === null ? null : list.getItemOffset(key)
-            pin =
-              key !== null && offset !== null
-                ? { key, offset, messageCount: messages.length }
-                : null
-          }
-          const landedOffset =
-            pin && messages.length > pin.messageCount ? list.getItemOffset(pin.key) : null
-          if (pin && landedOffset !== null && landedOffset > pin.offset) {
-            requestedOffset = landedOffset - pin.offset
-            reportedOffset = list.getScrollOffset()
-            pin = null
-          } else {
-            isWaiting = true
-          }
-        } else {
-          // Scroll events are throttled, so the reported offset can be a frame old. Build on
-          // our own last request unless the list reported a new one — a steady step per frame.
-          const currentOffset = list.getScrollOffset()
-          const baseOffset =
-            requestedOffset !== null && currentOffset === reportedOffset
-              ? requestedOffset
-              : currentOffset
-          reportedOffset = currentOffset
-          requestedOffset = Math.max(0, baseOffset + stepPx)
-          list.scrollToOffset(requestedOffset)
+        // Drive the offset instead of reading it back: FlashList drops scroll events for
+        // 100 ms after it shifts the list for a prepended page, so the reported offset can be
+        // a page stale. If rows above the screen changed height (a page landed, even while
+        // typing, or estimates got measured), the row on screen moved — move with it.
+        const { anchor } = finger
+        const anchorOffset = anchor ? list.getItemOffset(anchor.key) : null
+        if (anchor && anchorOffset !== null) {
+          finger.targetOffset += anchorOffset - anchor.offset
         }
+        // At the top with more history to come: the page hasn't landed yet, this frame is lost.
+        const isWaiting =
+          stepPx < 0 && finger.targetOffset === 0 && runtime.chat.getState().hasOlder
+        finger.targetOffset = Math.max(0, finger.targetOffset + stepPx)
+        list.scrollToOffset(finger.targetOffset)
+        finger.anchor = list.getAnchorAt(finger.targetOffset)
         await nextFrame()
 
         const frameAt = performance.now()
@@ -119,6 +102,12 @@ export const usePerfBenchmark = ({ listRef, composerRef }: UsePerfBenchmarkOptio
       await delay(SETTLE_BEFORE_START_MS)
 
       const messagesLoadedBefore = runtime.chat.getState().messages.length
+      // Settled with no page in flight, so the reported offset is current — the last time it's read.
+      const startOffset = listRef.current?.getScrollOffset() ?? 0
+      const finger: Finger = {
+        targetOffset: startOffset,
+        anchor: listRef.current?.getAnchorAt(startOffset) ?? null,
+      }
       const jsHeapBeforeMb = readJsHeapMb()
       const sampler = new FrameSampler<BenchmarkPhase>(BENCHMARK_PHASES)
       const fpsMonitor = new JSFPSMonitor()
@@ -131,14 +120,14 @@ export const usePerfBenchmark = ({ listRef, composerRef }: UsePerfBenchmarkOptio
       fpsMonitor.startTracking()
 
       startPhase('scrollUp')
-      const waitingAtTopMs = await scrollBy(SCROLL_UP_FRAMES, -SCROLL_STEP_PX)
+      const waitingAtTopMs = await scrollBy(finger, SCROLL_UP_FRAMES, -SCROLL_STEP_PX)
       startPhase('typing')
       for (let length = 1; length <= TYPED_TEXT.length; length += 1) {
         composerRef.current?.setText(TYPED_TEXT.slice(0, length))
         await delay(KEYSTROKE_INTERVAL_MS)
       }
       startPhase('scrollDown')
-      await scrollBy(SCROLL_DOWN_FRAMES, SCROLL_STEP_PX * 2)
+      await scrollBy(finger, SCROLL_DOWN_FRAMES, SCROLL_STEP_PX * 2)
       listRef.current?.scrollToLatest()
       composerRef.current?.setText('')
 
@@ -153,6 +142,7 @@ export const usePerfBenchmark = ({ listRef, composerRef }: UsePerfBenchmarkOptio
         averageJsFps: jsFps.averageFPS,
         minimumJsFps: jsFps.minFPS,
         latencyMs: runtime.devSettings.getState().latencyMs,
+        prefetchScreens: perfStore.getState().prefetchScreens,
         isFreshStart: messagesLoadedBefore === MESSAGE_PAGE_SIZE,
         waitingAtTopMs,
         messagesLoadedBefore,

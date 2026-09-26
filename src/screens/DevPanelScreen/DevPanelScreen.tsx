@@ -18,7 +18,15 @@ import {
 import type { RootStackScreenProps, ROUTES } from '@navigation/RootStack'
 import { haptics } from '@services/feedback/haptics'
 import { showToast } from '@services/feedback/toast'
-import { formatPerfResult, perfStore, requestPerfRun } from '@services/perf/perfStore'
+import {
+  formatPerfResult,
+  formatPrefetchScreens,
+  perfStore,
+  PREFETCH_SCREENS_OPTIONS,
+  type PrefetchScreens,
+  requestPerfRun,
+  setPrefetchScreens,
+} from '@services/perf/perfStore'
 import { COLORS } from '@theme'
 import type { SendFault } from '@types'
 import { useCallback, useEffect, useState } from 'react'
@@ -33,6 +41,12 @@ const LATENCY_OPTIONS: ReadonlyArray<SegmentedOption<number>> = [
   { value: 350, label: 'Normal' },
   { value: 1500, label: 'Slow' },
 ]
+
+const PREFETCH_OPTIONS: ReadonlyArray<SegmentedOption<PrefetchScreens>> =
+  PREFETCH_SCREENS_OPTIONS.map((value) => ({
+    value,
+    label: `${formatPrefetchScreens(value)} ahead`,
+  }))
 
 const FAULT_LABELS: Record<SendFault, string> = {
   loseResponse: 'lose response',
@@ -82,6 +96,7 @@ const DevPanelScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.devPa
   const accessStatus = useAccessState((state) => state.status)
   const pendingPurchases = usePurchasesState((state) => state.pendingTransactions.length)
   const isBenchmarkRunning = useStore(perfStore, (state) => state.isRunning)
+  const prefetchScreens = useStore(perfStore, (state) => state.prefetchScreens)
   const [latestResult] = useStore(perfStore, (state) => state.results)
   const [serverSnapshot, setServerSnapshot] = useState(() => runtime.server.getSnapshot())
 
@@ -163,6 +178,11 @@ const DevPanelScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.devPa
     }
     // The chat screen announces the change once the app hears about it.
     runtime.server.simulateExpireAllAccess()
+  }
+
+  const handlePrefetchChange = (value: PrefetchScreens) => {
+    setPrefetchScreens(value)
+    showToast(`Older messages now load ${formatPrefetchScreens(value)} before the top.`)
   }
 
   const handleRunBenchmark = useCallback(() => {
@@ -298,9 +318,15 @@ const DevPanelScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.devPa
         </SectionCard>
 
         <SectionCard
-          description="Flings up through the 50,000-message history, types a sentence, flings back. Profile it with Perf Monitor or Instruments while it runs."
+          description="Flings up through the 50,000-message history, types a sentence, flings back. Profile it with Perf Monitor or Instruments while it runs. The switch sets how early older messages are requested: ½ screen was the original, 4 screens the fix."
           title="Performance"
         >
+          <SegmentedControl
+            accessibilityLabel="Load older messages ahead"
+            onChange={handlePrefetchChange}
+            options={PREFETCH_OPTIONS}
+            value={prefetchScreens}
+          />
           <Button
             icon="speedometer-outline"
             isLoading={isBenchmarkRunning}

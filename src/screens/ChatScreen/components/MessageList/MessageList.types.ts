@@ -2,8 +2,8 @@ export type MessageListHandle = {
   scrollToLatest: () => void
   scrollToOffset: (offset: number) => void
   getScrollOffset: () => number
-  /** Key of the oldest loaded bubble (day separators skipped). */
-  getTopMessageKey: () => string | null
+  /** The row at the top of the screen for this scroll offset, and where it starts. */
+  getAnchorAt: (offset: number) => { key: string; offset: number } | null
   /** Scroll offset at which that item starts, from the list's own layout. */
   getItemOffset: (key: string) => number | null
 }

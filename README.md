@@ -13,7 +13,7 @@ force-quit.
 | Recorded on | iPhone 17 (physical), iOS 26.6.1 |
 | Build mode for recordings | Release (`npm run ios:release -- --device`) |
 | Build mode for performance | Release, Hermes (`npm run ios:release -- --device`) |
-| Other platform | Android — see below. Tested: **TODO yes / no** |
+| Other platform | Android — smoke-tested on a Samsung Galaxy A16 (SM-A165F), Android 16, Release APK (`npm run android:release`): send, offline queue across a force-stop, catch-up, lost-response retry, purchase, back gesture, history scroll. Not recorded or profiled. |
 
 ## Run it
 
@@ -32,6 +32,12 @@ Android: `npm run android` (Expo Go) or `npm run android:dev-build` / `npm run
 android:release` with an emulator running. CocoaPods needs a UTF-8 locale; if `pod
 install` fails with `Unicode Normalization not appropriate for ASCII-8BIT`, run
 `export LANG=en_US.UTF-8` first.
+
+`ios/` and `android/` are not committed: the project uses Continuous Native Generation, so
+`expo run:ios` / `expo run:android` generate them from `app.json` before building (Expo Go
+needs neither). On a physical iPhone, `npm run ios:release -- --device` signs with your own
+team from Xcode; the App Store's Expo Go only opens the latest SDK, so use a native build
+there.
 
 ## Simulation controls
 
@@ -269,7 +275,9 @@ and a simulated network; they are not proof for slower devices or real latency.
   were in flight; a real server would keep processing them. The lost-response case
   (accepted, reply lost) is simulated explicitly instead.
 - Paid access expiry is re-evaluated on refresh/reconnect, not on a timer.
-- **TODO** — anything found while testing on Android.
+- Android shows the paywall and the simulation controls as full-screen modals (iOS uses sheets).
+  On the Galaxy A16 their headers sat right under the edge-to-edge status bar; they now add
+  the top inset on Android. Recordings and performance numbers are iOS only.
 
 ## Resuming a large media upload (not built)
 

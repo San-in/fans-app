@@ -6,11 +6,11 @@ import { Ionicons } from '@expo/vector-icons'
 import { useAccessState, usePurchasesState, useRuntime } from '@hooks'
 import type { RootStackScreenProps, ROUTES } from '@navigation/RootStack'
 import { haptics } from '@services/feedback/haptics'
-import { COLORS } from '@theme'
+import { COLORS, SPACING } from '@theme'
 import { useCallback, useEffect } from 'react'
-import { ActivityIndicator, ScrollView, View } from 'react-native'
+import { ActivityIndicator, Platform, ScrollView, View } from 'react-native'
 import Animated, { FadeIn, ReduceMotion } from 'react-native-reanimated'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { describePaywallStatus, TONE_COLOR } from './describePaywallStatus'
 import { styles } from './PaywallScreen.styles'
@@ -23,7 +23,10 @@ const BENEFITS = [
 
 const PaywallScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.paywall>) => {
   const { runtime } = useRuntime()
-  const { bottom } = useSafeAreaInsets()
+  const { top: liveTopInset, bottom } = useSafeAreaInsets()
+  // iOS shows this modal as a sheet below the status bar; Android draws it full-screen, edge to edge.
+  const topInset =
+    Platform.OS === 'android' ? (initialWindowMetrics?.insets.top ?? liveTopInset) : 0
   const products = usePurchasesState((state) => state.products)
   const productsStatus = usePurchasesState((state) => state.productsStatus)
   const flow = usePurchasesState((state) => state.flow)
@@ -81,7 +84,7 @@ const PaywallScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.paywal
 
   return (
     <View style={styles.container}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: SPACING.lg + topInset }]}>
         <SimulatedBadge />
         <IconButton accessibilityLabel="Close" icon="close" onPress={navigation.goBack} />
       </View>

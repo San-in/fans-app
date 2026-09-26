@@ -27,11 +27,11 @@ import {
   requestPerfRun,
   setPrefetchScreens,
 } from '@services/perf/perfStore'
-import { COLORS } from '@theme'
+import { COLORS, SPACING } from '@theme'
 import type { SendFault } from '@types'
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, ScrollView, Switch, View } from 'react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { Alert, Platform, ScrollView, Switch, View } from 'react-native'
+import { initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useStore } from 'zustand'
 
 import { styles } from './DevPanelScreen.styles'
@@ -85,7 +85,10 @@ const ToggleRow = ({ title, description, value, onValueChange }: ToggleRowProps)
 /** The failure-case controls the task asks for, plus live counters to verify what happened. */
 const DevPanelScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.devPanel>) => {
   const { runtime, resetEverything } = useRuntime()
-  const { bottom } = useSafeAreaInsets()
+  const { top: liveTopInset, bottom } = useSafeAreaInsets()
+  // iOS shows this modal as a sheet below the status bar; Android draws it full-screen, edge to edge.
+  const topInset =
+    Platform.OS === 'android' ? (initialWindowMetrics?.insets.top ?? liveTopInset) : 0
   const isOffline = useDevSettingsState((state) => state.isOffline)
   const latencyMs = useDevSettingsState((state) => state.latencyMs)
   const legacyDuplicateBug = useDevSettingsState((state) => state.legacyDuplicateBug)
@@ -212,7 +215,7 @@ const DevPanelScreen = ({ navigation }: RootStackScreenProps<typeof ROUTES.devPa
 
   return (
     <View style={styles.container}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: SPACING.lg + topInset }]}>
         <AppText accessibilityRole="header" variant="heading">
           Simulation controls
         </AppText>

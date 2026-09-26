@@ -16,8 +16,7 @@ const findOutboxItem = (runtime: TestRuntime, text: string) =>
 
 /** Bubble texts in the order the list renders them. */
 const getRenderedTexts = (chat: ChatEngine) => {
-  const { messages, outbox } = chat.getState()
-  return buildChatListItems(messages, outbox, Date.now()).flatMap((item) => {
+  return buildChatListItems(chat.getState(), Date.now()).flatMap((item) => {
     if (item.type === 'message') {
       return [item.message.text]
     }

@@ -106,9 +106,15 @@ const getEntryAuthor = (entry: ThreadEntry | undefined) =>
 const getEntryTime = (entry: ThreadEntry) =>
   entry.outboxItem ? entry.outboxItem.createdAt : entry.message.createdAt
 
+type ChatListInput = {
+  messages: ReadonlyArray<MessageDto>
+  outbox: ReadonlyArray<OutboxItem>
+  /** More history above the loaded window. */
+  hasOlder: boolean
+}
+
 export const buildChatListItems = (
-  messages: ReadonlyArray<MessageDto>,
-  outbox: ReadonlyArray<OutboxItem>,
+  { messages, outbox, hasOlder }: ChatListInput,
   now: number
 ): Array<ChatListItem> => {
   const items: Array<ChatListItem> = []
@@ -116,6 +122,13 @@ export const buildChatListItems = (
 
   const addDaySeparatorIfNeeded = (timestamp: number) => {
     const dayKey = getLocalDayKey(timestamp)
+    // The oldest loaded message isn't known to start its day while older ones remain.
+    // A separator there would also keep its key as a same-day page slides in above it,
+    // and FlashList, anchored to it, would let the whole page jump into view.
+    if (previousDayKey === null && hasOlder) {
+      previousDayKey = dayKey
+      return
+    }
     if (dayKey !== previousDayKey) {
       items.push({ type: 'day', key: `day:${dayKey}`, label: formatDayLabel(timestamp, now) })
       previousDayKey = dayKey
@@ -143,21 +156,17 @@ export const buildChatListItems = (
 
 /** Memoizes on input identity so a zustand selector returns a stable array. */
 export const createChatListSelector = (now: () => number) => {
-  let lastMessages: ReadonlyArray<MessageDto> | null = null
-  let lastOutbox: ReadonlyArray<OutboxItem> | null = null
+  let lastInput: ChatListInput | null = null
   let lastItems: Array<ChatListItem> = []
 
-  return ({
-    messages,
-    outbox,
-  }: {
-    messages: ReadonlyArray<MessageDto>
-    outbox: ReadonlyArray<OutboxItem>
-  }) => {
-    if (messages !== lastMessages || outbox !== lastOutbox) {
-      lastMessages = messages
-      lastOutbox = outbox
-      lastItems = buildChatListItems(messages, outbox, now())
+  return ({ messages, outbox, hasOlder }: ChatListInput) => {
+    if (
+      messages !== lastInput?.messages ||
+      outbox !== lastInput.outbox ||
+      hasOlder !== lastInput.hasOlder
+    ) {
+      lastInput = { messages, outbox, hasOlder }
+      lastItems = buildChatListItems(lastInput, now())
     }
     return lastItems
   }

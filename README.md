@@ -69,6 +69,22 @@ server actually accepted, next to what the thread shows.
 | Repeated events | ⋮ → **Repeat every event** on, then send / buy a gift: no duplicate bubbles, one gift message. |
 | Scroll & type benchmark | ⋮ → **Run scroll & type benchmark**. |
 
+## Recordings
+
+`recordings/` in the zip — iPhone 17, iOS 26.6.1, Release build. Every clip starts from
+**Reset everything**; each recovery sequence is one uncut take.
+
+| Clip | Length | Shows |
+|---|---|---|
+| `01-offline-force-quit-recovery.mp4` | 0:49 | three messages sent offline, each *Waiting for network* → force-quit → reopen, all three still waiting → Ethan sends 4 while offline → reconnect: the 4 arrive first, then the 3 are sent once, in order |
+| `02-duplicate-bug-and-fix.mp4` | 1:19 | legacy retry + lost response → two copies (the original bug) → fix on → one copy → repeated events → no extra bubbles; **State** shows what the server accepted |
+| `03-send-failures.mp4` | 2:46 | 503 retried automatically · lost response ×3 → *Not sent*, then confirmed by catch-up · 503 ×3 → failed message keeps its place while newer ones arrive → Retry · link → explanation + Edit · Delete |
+| `04-free-limit-then-purchase.mp4` | 0:36 | 10 free messages used → the 11th asks for All Access → after the purchase it is sent on its own |
+| `05-payments.mp4` | 1:45 | simulated-billing paywall · cancel · fail · repeated taps start one flow · delayed backend confirmation shown honestly · unrelated gift failure keeps All Access · repeated store events → one gift |
+| `06-payment-recovery-and-restore.mp4` | 1:37 | manual confirmation survives a force-quit, access granted once · backend rejects the receipt · nothing to restore · restore a purchase from another device · restore after expiry |
+| `07-scroll-and-benchmark.mp4` | 0:33 | flinging through the 50k history while pages load, typing, jump to latest, the benchmark run |
+| `08-reduced-motion.mp4` | 0:32 | with iOS Reduce Motion on, new messages and scrolls don't animate |
+
 ## The duplicate-message bug
 
 **What happened.** A send reached the server and was stored, but the response was lost.

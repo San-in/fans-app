@@ -6,16 +6,13 @@ server, a mock app store and a simulated network run in-process and persist to t
 SQLite files, so every failure case below can be reproduced on a device and survives a
 force-quit.
 
-> **Status — scaffold.** Everything marked **TODO** is left for the submitter: the final
-> Figma polish, recordings, measured numbers and time spent.
-
 ## Demo platform
 
 | | |
 |---|---|
-| Recorded on | **TODO** — e.g. iOS Simulator, iPhone 17 Pro, iOS 26.0 |
-| Build mode for recordings | **TODO** — development build (`npm run ios:dev-build`) |
-| Build mode for performance | **TODO** — Release (`npm run ios:release`) |
+| Recorded on | iPhone 17 (physical), iOS 26.6.1 |
+| Build mode for recordings | Release (`npm run ios:release -- --device`) |
+| Build mode for performance | Release, Hermes (`npm run ios:release -- --device`) |
 | Other platform | Android — see below. Tested: **TODO yes / no** |
 
 ## Run it
@@ -140,7 +137,34 @@ npm run test:duplicate-bug  # same test against the legacy retry path: fails, "E
 
 ## Tests
 
-`npm test` — **TODO paste the final output.** Last run: 6 suites, 23 tests, all passing.
+`npm test`:
+
+```
+PASS src/services/chat/__tests__/buildChatListItems.test.ts
+PASS src/mock/server/__tests__/MockServer.test.ts
+PASS src/services/chat/__tests__/restartRecovery.test.ts
+PASS src/services/chat/__tests__/duplicateOnLostResponse.test.ts
+PASS src/services/chat/__tests__/outboxDelivery.test.ts
+PASS src/services/billing/__tests__/delayedConfirmation.test.ts
+PASS src/services/billing/__tests__/purchaseFlows.test.ts
+
+Test Suites: 7 passed, 7 total
+Tests:       25 passed, 25 total
+```
+
+`npm run test:duplicate-bug` runs the same duplicate test against the legacy retry path and
+fails as it should:
+
+```
+✕ ends with exactly one copy after the retry
+  Expected: 1
+  Received: 2
+Tests:       1 failed, 1 passed, 2 total
+```
+
+(The force-quit case passes there too: after a restart the catch-up runs before the outbox
+drains and finds the accepted message by its clientId, so nothing is resent. The bug is the
+in-session retry minting a new id.)
 
 | Test | Covers |
 |---|---|
@@ -150,30 +174,62 @@ npm run test:duplicate-bug  # same test against the legacy retry path: fails, "E
 | `billing/delayedConfirmation` | no access while the backend is pending; resume after a force-quit mid-verification |
 | `billing/purchaseFlows` | double tap, cancel, unrelated failure keeps access, repeated store events, restore, expired restore |
 | `mock/MockServer` | idempotency, persistence, deterministic 50k history paging |
+| `chat/buildChatListItems` | no day separator above the oldest loaded message while older history remains (it anchored the list and made it jump on prepend); separators where a day really starts |
 
 ## Performance
 
-**TODO — fill in from real runs.** Method:
+Measured on a physical iPhone 17, iOS 26.6.1, Release build (Hermes), mock latency 350 ms.
+Method:
 
-1. `npm run ios:release -- --device` (Release, Hermes). Record the device and OS.
-2. ⋮ → **Reset everything**, then ⋮ → **Run scroll & type benchmark**. It scrolls to the
-   bottom, then flings up ~19,000 px at a steady 80 px per frame (pages load as it goes),
-   types a 67-character sentence and flings back down. Same steps and the same seeded
-   history every run; a run that didn't start from a reset is flagged as not comparable.
-3. The alert (and `[perf] {…}` in the log) reports JS frame timing overall and per phase
+1. `npm run ios:release -- --device` (Release, Hermes).
+2. ⋮ → **Performance** → pick the variant (**½ screen ahead** = before, **4 screens ahead** =
+   after). Both variants live in the same build, so nothing else changes between them.
+3. ⋮ → **Reset everything**, then ⋮ → **Run scroll & type benchmark**. It scrolls to the
+   bottom, then flings up for 240 frames at a steady 80 px per frame (~19,000 px; pages load
+   as it goes), types a 67-character sentence and flings back down. Same steps and the same
+   seeded history every run; a run that didn't start from a reset is flagged as not
+   comparable.
+4. The alert (and `[perf] {…}` in the log) reports JS frame timing overall and per phase
    (scroll up / typing / scroll down), and how long the scroll-up sat at the top of the
    loaded window waiting for the next page.
-4. Run it 3× per variant, keep the median. Memory from Xcode (Debug → Attach to Process →
-   Memory) or `adb shell dumpsys meminfo`; Android UI-thread jank from
-   `adb shell dumpsys gfxinfo`.
+5. 3 runs per variant, medians below.
 
-| Variant | Build | JS FPS avg / min | Dropped JS frames (up / typing / down) | Longest frame | Waiting at top | UI jank | Memory |
+| Variant | JS FPS avg / min | Dropped JS frames (up / typing / down) | Longest JS frame | p95 | Waiting at the top | Messages loaded | JS heap |
 |---|---|---|---|---|---|---|---|
-| before — **TODO** | Release | | | | | | |
-| after — **TODO** | Release | | | | | | |
+| before — older page requested ½ screen ahead | 59.4 / 58 | 6 (6 / 0 / 0) | 52 ms | 17 ms | **1,000 ms** | 50 → 200 | 12 → 20 MB |
+| after — 4 screens ahead | 59.5 / 58 | 8 (6 / 1 / 0) | 46 ms | 17 ms | **63 ms** | 50 → 300 | 12 → 20 MB |
 
-Bottleneck investigated: **TODO**. The JS frame sampler cannot see UI-thread drops;
-simulator numbers are not proof of performance on a real phone.
+Raw runs — before: waiting 996 / 1,000 / 1,004 ms, dropped 6 / 6 / 7, longest 52 / 51 / 55 ms.
+After: waiting 68 / 58 / 63 ms, dropped 8 / 7 / 8, longest 51 / 42 / 46 ms. One "after" run
+was the second in the same app session and read a JS heap of 24 → 28 MB (the previous run's
+heap not collected yet); the heap column uses the other two.
+
+**Bottleneck: pagination, not rendering.** The JS thread kept ~60 fps in both variants. But
+with the older page requested half a screen before the top, which a fast fling covers in
+~0.1 s while a page takes ~350 ms, the list sat pinned at the top for about a quarter of the
+~4 s scroll-up — ~330 ms per page. **Change:** request it 4 screens ahead
+(`onStartReachedThreshold`). The wait drops from 1,000 ms to 63 ms, and in the same 240
+frames the list travels ~30 % further through the history (300 messages loaded instead of
+200).
+
+**Cost:** two more dropped frames per run (5 page prepends instead of 3, each costing a frame
+or two) and one extra page of messages in memory. The threshold must stay below one page's
+height: FlashList fires `onStartReached` only when the list *enters* the start zone, so a zone
+taller than a page would leave the list inside it after a prepend and stop paging. A residual
+~60 ms (about 4 frames) of waiting remains with 4 screens; I haven't traced which page causes
+it.
+
+**The benchmark had bugs first.** FlashList ignores scroll events for ~100 ms after it shifts
+the content for a prepended page, so the first version of the benchmark pushed the list from
+a page-stale offset. Its first phone series was discarded; the benchmark now drives the
+offset itself and follows the row on screen. The same investigation found a real list bug:
+a same-day "Today" separator at index 0 kept its key on prepend, so
+`maintainVisibleContentPosition` anchored to it and the list jumped. The separator above the
+oldest loaded message is now hidden while older history remains (`buildChatListItems` test).
+
+**Not measured:** native (process) memory and UI-thread frame timing — the JS heap comes
+from Hermes; Xcode Instruments / Android `dumpsys` weren't used. Numbers are from one phone
+and a simulated network; they are not proof for slower devices or real latency.
 
 ## Platform limitations
 
@@ -223,4 +279,10 @@ moderation and an age gate on creator content; anything adult stays off the stor
 
 ## Time spent
 
-**TODO.**
+About 8 hours:
+
+| | |
+|---|---|
+| Setup and development | ~3 h |
+| Reading through and verifying the generated code | ~2 h |
+| Running the required scenarios, fixing what they exposed, measurements and this report | ~3 h |

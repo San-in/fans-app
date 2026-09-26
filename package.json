@@ -39,8 +39,8 @@
   },
   "scripts": {
     "start": "expo start",
-    "ios": "expo run:ios",
-    "android": "expo run:android",
+    "ios": "expo start --ios",
+    "android": "expo start --android",
     "ios:dev-build": "expo run:ios",
     "ios:release": "expo run:ios --configuration Release",
     "android:dev-build": "expo run:android",

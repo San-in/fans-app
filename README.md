@@ -33,9 +33,25 @@ android:release` with an emulator running. CocoaPods needs a UTF-8 locale; if `p
 install` fails with `Unicode Normalization not appropriate for ASCII-8BIT`, run
 `export LANG=en_US.UTF-8` first.
 
-Everything the reviewer needs is behind the **⋮ (Simulation controls)** button in the chat
-header and the **Simulation** card on the paywall. **Reset everything** at the bottom of
-the controls wipes all four databases.
+## Simulation controls
+
+Every failure case is reproduced in the app itself — no scripts or flags. Open the **⋮**
+button in the chat header (Simulation controls) and the **Simulation** card on the paywall.
+
+| Where | Section | What it does |
+|---|---|---|
+| Chat header **⋮** | Network | **Offline** (survives a force-quit) · latency Fast 50 / Normal 350 / Slow 1500 ms |
+| | Next send | one-shot faults for the next request: **Lose response** (the server stores it, the reply is lost), **Server error 503**, **Rate limit 429** · Clear |
+| | Incoming | **Ethan sends 4 messages** — written straight into the server; while offline they only come back through catch-up |
+| | Bugs & repeats | **Legacy retry (duplicate bug)** — the original bug · **Repeat every event** — realtime and store events arrive twice |
+| | Billing | **Purchase on another device** (for Restore) · **Expire All Access** |
+| | Performance | prefetch ½ / 4 screens ahead (before / after) · **Run scroll & type benchmark** |
+| | State | live counters: app outbox, loaded messages, backend-confirmed access, messages the server accepted, pending confirmations, store ledger |
+| | **Reset everything** | wipes all four databases |
+| Paywall | Simulation | store result **Success / Cancel / Fail** · backend confirmation **Instant / Delayed (6 s) / Manual / Reject** · **Backend: confirm N pending** |
+
+The **State** card is the quickest proof of "one copy": it shows how many messages the
+server actually accepted, next to what the thread shows.
 
 ## Reproducing the required scenarios
 

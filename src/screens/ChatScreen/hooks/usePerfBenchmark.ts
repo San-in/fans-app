@@ -53,26 +53,36 @@ export const usePerfBenchmark = ({ listRef, composerRef }: UsePerfBenchmarkOptio
       let waitingAtTopMs = 0
       let requestedOffset: number | null = null
       let reportedOffset: number | null = null
-      let anchorKey: string | null = null
+      /** The top message when the scroll hit the top, and where it sat then. */
+      let pin: { key: string; offset: number; messageCount: number } | null = null
       let previousFrameAt = performance.now()
       for (let frame = 0; frame < frames; frame += 1) {
         const list = listRef.current
         if (!list) {
           break
         }
-        const isPinnedAtTop = requestedOffset === 0 && runtime.chat.getState().hasOlder
+        const { hasOlder, messages } = runtime.chat.getState()
+        const isPinnedAtTop = requestedOffset === 0 && hasOlder
         let isWaiting = false
         if (isPinnedAtTop) {
-          // Like a finger at the top: no scrolling while the page loads. Once it lands the
-          // list keeps the old top message in place; continue from where it now sits. The
-          // scroll event for that shift can be throttled away, so the reported offset isn't
-          // trusted here — pushing from a stale 0 would throw the list back to the top.
-          anchorKey = anchorKey ?? list.getTopMessageKey()
-          const anchorOffset = anchorKey === null ? null : list.getItemOffset(anchorKey)
-          if (anchorOffset !== null && anchorOffset > 0) {
-            requestedOffset = anchorOffset
+          // Like a finger at the top: no scrolling while the page loads. Once it lands, the
+          // list keeps the old top message where it was on screen, so the real offset is how
+          // far that message moved down. The scroll event for that shift can be throttled
+          // away — pushing from a stale 0 would throw the list back to the top.
+          if (!pin) {
+            const key = list.getTopMessageKey()
+            const offset = key === null ? null : list.getItemOffset(key)
+            pin =
+              key !== null && offset !== null
+                ? { key, offset, messageCount: messages.length }
+                : null
+          }
+          const landedOffset =
+            pin && messages.length > pin.messageCount ? list.getItemOffset(pin.key) : null
+          if (pin && landedOffset !== null && landedOffset > pin.offset) {
+            requestedOffset = landedOffset - pin.offset
             reportedOffset = list.getScrollOffset()
-            anchorKey = null
+            pin = null
           } else {
             isWaiting = true
           }
